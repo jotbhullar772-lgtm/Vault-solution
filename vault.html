@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vault — Distributed Object Storage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0e14; --panel:#10161f; --panel2:#151d29; --line:#232d3b;
+  --text:#e6edf3; --dim:#8b98a8; --dim2:#5a6a7d;
+  --healthy:#4fd1c5; --degraded:#e8a33d; --dead:#e3564b; --partitioned:#8a7ff0;
+  --healthy-bg:rgba(79,209,197,.12); --degraded-bg:rgba(232,163,61,.12); --dead-bg:rgba(227,86,75,.12); --partitioned-bg:rgba(138,127,240,.12);
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:'IBM Plex Sans',system-ui,sans-serif;
+  font-size:14px; line-height:1.5;
+}
+.mono{font-family:'IBM Plex Mono',monospace}
+header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 20px; border-bottom:1px solid var(--line); background:var(--panel);
+  position:sticky; top:0; z-index:5;
+}
+header .brand{display:flex; align-items:baseline; gap:10px}
+header h1{font-size:16px; margin:0; font-weight:600; letter-spacing:.2px}
+header .sub{color:var(--dim2); font-size:12px}
+.status-strip{display:flex; gap:18px; font-size:12px; color:var(--dim)}
+.status-strip b{color:var(--text); font-weight:600}
+.stat-good{color:var(--healthy)} .stat-bad{color:var(--dead)} .stat-warn{color:var(--degraded)}
+
+.layout{display:grid; grid-template-columns:270px 1fr; gap:0; min-height:calc(100% - 53px)}
+@media (max-width:860px){ .layout{grid-template-columns:1fr} }
+
+aside{
+  border-right:1px solid var(--line); background:var(--panel);
+  padding:18px; display:flex; flex-direction:column; gap:22px;
+}
+@media (max-width:860px){ aside{border-right:none; border-bottom:1px solid var(--line)} }
+
+section.block h2{
+  font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim2);
+  margin:0 0 10px 0; font-weight:600;
+}
+.field{margin-bottom:10px}
+.field label{display:block; font-size:12px; color:var(--dim); margin-bottom:4px}
+select, input[type=text], input[type=number]{
+  width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  border-radius:4px; padding:7px 8px; font-size:13px; font-family:inherit;
+}
+select:focus, input:focus{outline:2px solid var(--healthy); outline-offset:1px}
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  background:var(--panel2); border:1px solid var(--line); color:var(--text);
+  border-radius:4px; padding:8px 10px; font-size:12.5px; cursor:pointer; font-family:inherit;
+  width:100%; margin-top:6px; transition:border-color .15s;
+}
+.btn:hover{border-color:var(--dim2)}
+.btn:focus-visible{outline:2px solid var(--healthy); outline-offset:1px}
+.btn-accent{border-color:var(--healthy); color:var(--healthy)}
+.btn-accent:hover{background:var(--healthy-bg)}
+.btn-danger{border-color:var(--dead); color:var(--dead)}
+.btn-danger:hover{background:var(--dead-bg)}
+.toggle-row{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.switch{position:relative; width:36px; height:20px; flex:0 0 auto}
+.switch input{opacity:0; width:0; height:0}
+.slider-tog{position:absolute; inset:0; background:var(--line); border-radius:20px; cursor:pointer; transition:.15s}
+.slider-tog:before{content:"";position:absolute;width:14px;height:14px;left:3px;top:3px;background:var(--dim);border-radius:50%;transition:.15s}
+input:checked + .slider-tog{background:var(--healthy-bg); border:1px solid var(--healthy)}
+input:checked + .slider-tog:before{transform:translateX(16px); background:var(--healthy)}
+
+main{padding:20px; display:flex; flex-direction:column; gap:22px; min-width:0}
+
+.nodegrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px}
+.node{
+  border:1px solid var(--line); background:var(--panel); border-radius:6px; padding:10px;
+  display:flex; flex-direction:column; gap:6px;
+}
+.node .id{font-size:12px; font-weight:600}
+.node .region{color:var(--dim2); font-size:11px}
+.pill{
+  align-self:flex-start; font-size:10.5px; padding:2px 7px; border-radius:20px; font-weight:600;
+  letter-spacing:.02em;
+}
+.pill.healthy{background:var(--healthy-bg); color:var(--healthy)}
+.pill.degraded{background:var(--degraded-bg); color:var(--degraded)}
+.pill.dead{background:var(--dead-bg); color:var(--dead)}
+.pill.partitioned{background:var(--partitioned-bg); color:var(--partitioned)}
+.node .meta{font-size:11px; color:var(--dim)}
+.node-actions{display:flex; gap:5px; margin-top:2px; flex-wrap:wrap}
+.node-actions button{
+  flex:1; min-width:0; font-size:10.5px; padding:4px 4px; border-radius:4px; border:1px solid var(--line);
+  background:var(--panel2); color:var(--dim); cursor:pointer; font-family:inherit;
+}
+.node-actions button:hover{color:var(--text); border-color:var(--dim2)}
+
+.panel{border:1px solid var(--line); background:var(--panel); border-radius:6px; padding:16px}
+.panel h2{font-size:13px; margin:0 0 12px 0; font-weight:600; display:flex; justify-content:space-between; align-items:center}
+.panel h2 .count{color:var(--dim2); font-size:11px; font-weight:400}
+
+.objrow{
+  border-bottom:1px solid var(--line); padding:10px 0; display:grid;
+  grid-template-columns:1fr auto; gap:10px; align-items:center;
+}
+.objrow:last-child{border-bottom:none}
+.objname{font-size:13px; font-weight:600}
+.objmeta{font-size:11px; color:var(--dim2); margin-top:2px}
+.replica-chips{display:flex; gap:5px; flex-wrap:wrap; margin-top:6px}
+.chip{
+  font-size:10.5px; padding:2px 6px; border-radius:4px; border:1px solid var(--line); color:var(--dim);
+}
+.chip.healthy{border-color:var(--healthy); color:var(--healthy)}
+.chip.bad{border-color:var(--dead); color:var(--dead); text-decoration:line-through}
+.obj-status{font-size:11px; padding:3px 9px; border-radius:20px; font-weight:600; white-space:nowrap}
+.obj-status.ok{background:var(--healthy-bg); color:var(--healthy)}
+.obj-status.warn{background:var(--degraded-bg); color:var(--degraded)}
+.obj-status.crit{background:var(--dead-bg); color:var(--dead)}
+
+.empty{color:var(--dim2); font-size:12.5px; padding:6px 0}
+
+.log{
+  height:190px; overflow-y:auto; font-size:12px; background:#080b10; border-radius:4px;
+  padding:10px 12px; border:1px solid var(--line);
+}
+.log div{padding:2px 0; color:var(--dim); white-space:pre-wrap; word-break:break-word}
+.log .tag-repair{color:var(--healthy)}
+.log .tag-fail{color:var(--dead)}
+.log .tag-warn{color:var(--degraded)}
+.log .tag-write{color:var(--text)}
+
+::-webkit-scrollbar{width:8px} ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><h1>Vault</h1><span class="sub mono">distributed object store — ops console</span></div>
+  <div class="status-strip mono">
+    <span>nodes <b id="statNodes">–</b></span>
+    <span>objects <b id="statObjects">–</b></span>
+    <span>under-replicated <b id="statUnder" class="stat-warn">–</b></span>
+    <span>repairs run <b id="statRepairs">–</b></span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside>
+    <section class="block">
+      <h2>Durability policy</h2>
+      <div class="field">
+        <label for="replFactor">Replication factor (N)</label>
+        <select id="replFactor" class="mono"></select>
+      </div>
+      <div class="field">
+        <label for="quorumW">Write quorum (W)</label>
+        <select id="quorumW" class="mono"></select>
+      </div>
+      <div class="field toggle-row">
+        <label for="chaosToggle" style="margin:0">Chaos monkey (random failures)</label>
+        <span class="switch"><input type="checkbox" id="chaosToggle"><span class="slider-tog"></span></span>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Put object</h2>
+      <div class="field">
+        <label for="objName">Key</label>
+        <input type="text" id="objName" placeholder="e.g. invoices/2026-09.json" class="mono">
+      </div>
+      <button class="btn btn-accent" id="putBtn">Write object</button>
+    </section>
+
+    <section class="block">
+      <h2>Cluster actions</h2>
+      <button class="btn" id="repairNowBtn">Run repair pass</button>
+      <button class="btn" id="scrubBtn">Run integrity scrub</button>
+      <button class="btn btn-danger" id="killRandomBtn">Kill random node</button>
+      <button class="btn" id="healAllBtn">Heal all nodes</button>
+    </section>
+  </aside>
+
+  <main>
+    <div class="panel">
+      <h2>Storage nodes <span class="count" id="nodeCount"></span></h2>
+      <div class="nodegrid" id="nodeGrid"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Objects <span class="count" id="objCount"></span></h2>
+      <div id="objList"><div class="empty">No objects yet — write one from the sidebar.</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Event log</h2>
+      <div class="log mono" id="logPane"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+  const REGIONS = ['us-east','us-west','eu-central','eu-west','ap-south','ap-north','sa-east','af-south'];
+  const NODE_COUNT = 8;
+  let nodes = [];
+  let objects = [];
+  let N = 3, W = 2;
+  let repairCount = 0;
+  let chaosInterval = null;
+
+  function initNodes(){
+    nodes = [];
+    for(let i=0;i<NODE_COUNT;i++){
+      nodes.push({id:'node-'+String(i+1).padStart(2,'0'), region:REGIONS[i], status:'healthy'});
+    }
+  }
+
+  function log(msg, tag){
+    const pane = document.getElementById('logPane');
+    const t = new Date().toLocaleTimeString('en-GB');
+    const div = document.createElement('div');
+    div.className = tag ? 'tag-'+tag : '';
+    div.textContent = '['+t+'] '+msg;
+    pane.prepend(div);
+    while(pane.children.length > 200) pane.removeChild(pane.lastChild);
+  }
+
+  function healthyNodes(){ return nodes.filter(n=>n.status==='healthy'); }
+
+  function pickPlacement(count){
+    const pool = healthyNodes().map(n=>n.id);
+    // deterministic-ish shuffle
+    for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+    return pool.slice(0, count);
+  }
+
+  function checksum(str){
+    let h=0; for(let i=0;i<str.length;i++){ h=(h*31+str.charCodeAt(i))>>>0; }
+    return h.toString(16).padStart(8,'0');
+  }
+
+  function nodeStatus(id){
+    const n = nodes.find(x=>x.id===id);
+    return n ? n.status : 'dead';
+  }
+
+  function replicaUsable(rep){
+    if(rep.corrupted) return false;
+    const st = nodeStatus(rep.nodeId);
+    return st === 'healthy';
+  }
+
+  function objectHealth(obj){
+    const usable = obj.replicas.filter(replicaUsable).length;
+    if(usable >= obj.n) return 'ok';
+    if(usable >= W) return 'warn';
+    return 'crit';
+  }
+
+  function putObject(name){
+    if(!name){ log('write rejected: empty key', 'fail'); return; }
+    const targets = pickPlacement(N);
+    if(targets.length < W){
+      log(`write "${name}" failed — only ${targets.length} healthy node(s) available, need quorum W=${W}`, 'fail');
+      return;
+    }
+    const sum = checksum(name + Date.now());
+    objects.push({
+      name, n:N, checksum:sum,
+      replicas: targets.map(id=>({nodeId:id, corrupted:false}))
+    });
+    const acked = Math.min(targets.length, N);
+    if(acked < N){
+      log(`write "${name}" acked by ${acked}/${N} replicas (quorum met, under-replicated) — checksum ${sum}`, 'warn');
+    } else {
+      log(`write "${name}" acked by ${acked}/${N} replicas — checksum ${sum}`, 'write');
+    }
+    render();
+  }
+
+  function repairPass(){
+    let repaired = 0;
+    objects.forEach(obj=>{
+      const usable = obj.replicas.filter(replicaUsable);
+      const bad = obj.replicas.filter(r=>!replicaUsable(r));
+      if(usable.length < obj.n){
+        const needed = obj.n - usable.length;
+        const usedIds = new Set(obj.replicas.map(r=>r.nodeId));
+        const candidates = healthyNodes().map(n=>n.id).filter(id=>!usedIds.has(id));
+        const toAdd = candidates.slice(0, needed);
+        toAdd.forEach(id=>{
+          obj.replicas.push({nodeId:id, corrupted:false});
+          repaired++;
+        });
+        // drop dead/corrupted replicas that were on permanently dead nodes to reclaim space
+        obj.replicas = obj.replicas.filter(r=> nodeStatus(r.nodeId) !== 'dead');
+        if(toAdd.length){
+          log(`repaired "${obj.name}" — re-replicated to ${toAdd.join(', ')}`, 'repair');
+        }
+      }
+    });
+    if(repaired>0){ repairCount += repaired; }
+    else { log('repair pass complete — no action needed', 'repair'); }
+    render();
+  }
+
+  function scrub(){
+    let found = 0;
+    objects.forEach(obj=>{
+      obj.replicas.forEach(r=>{
+        if(r.corrupted){
+          found++;
+          log(`scrub: checksum mismatch on "${obj.name}" @ ${r.nodeId} — marked bad, queued for repair`, 'warn');
+        }
+      });
+    });
+    if(found===0) log('scrub complete — all checksums verified, no corruption found', 'repair');
+    repairPass();
+  }
+
+  function setNodeStatus(id, status){
+    const n = nodes.find(x=>x.id===id);
+    if(!n) return;
+    n.status = status;
+    log(`${id} → ${status}`, status==='healthy' ? 'repair' : (status==='dead' ? 'fail' : 'warn'));
+    render();
+  }
+
+  function corruptReplica(nodeId){
+    let hit = false;
+    objects.forEach(obj=>{
+      obj.replicas.forEach(r=>{
+        if(r.nodeId===nodeId && !hit){ r.corrupted = true; hit = true;
+          log(`bit-rot injected: "${obj.name}" replica on ${nodeId} corrupted`, 'warn');
+        }
+      });
+    });
+    if(!hit) log(`${nodeId} holds no replicas to corrupt`, 'warn');
+    render();
+  }
+
+  function killRandom(){
+    const alive = nodes.filter(n=>n.status!=='dead');
+    if(alive.length===0) return;
+    const n = alive[Math.floor(Math.random()*alive.length)];
+    setNodeStatus(n.id, 'dead');
+  }
+
+  function healAll(){
+    nodes.forEach(n=>n.status='healthy');
+    objects.forEach(obj=> obj.replicas.forEach(r=> r.corrupted=false));
+    log('all nodes and replicas restored to healthy', 'repair');
+    render();
+  }
+
+  function renderNodes(){
+    const grid = document.getElementById('nodeGrid');
+    grid.innerHTML = '';
+    nodes.forEach(n=>{
+      const repCount = objects.reduce((a,o)=>a + o.replicas.filter(r=>r.nodeId===n.id).length, 0);
+      const el = document.createElement('div');
+      el.className = 'node';
+      el.innerHTML = `
+        <span class="id mono">${n.id}</span>
+        <span class="region mono">${n.region}</span>
+        <span class="pill ${n.status}">${n.status}</span>
+        <span class="meta">${repCount} replica${repCount===1?'':'s'}</span>
+        <div class="node-actions">
+          <button data-act="kill" data-id="${n.id}">Kill</button>
+          <button data-act="partition" data-id="${n.id}">Partition</button>
+          <button data-act="corrupt" data-id="${n.id}">Corrupt</button>
+          <button data-act="heal" data-id="${n.id}">Heal</button>
+        </div>`;
+      grid.appendChild(el);
+    });
+    document.getElementById('nodeCount').textContent = `(${nodes.length})`;
+    grid.querySelectorAll('button').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.dataset.id, act = b.dataset.act;
+        if(act==='kill') setNodeStatus(id,'dead');
+        else if(act==='partition') setNodeStatus(id,'partitioned');
+        else if(act==='heal') setNodeStatus(id,'healthy');
+        else if(act==='corrupt') corruptReplica(id);
+      });
+    });
+  }
+
+  function renderObjects(){
+    const list = document.getElementById('objList');
+    document.getElementById('objCount').textContent = `(${objects.length})`;
+    if(objects.length===0){ list.innerHTML = '<div class="empty">No objects yet — write one from the sidebar.</div>'; return; }
+    list.innerHTML = '';
+    objects.slice().reverse().forEach(obj=>{
+      const h = objectHealth(obj);
+      const usable = obj.replicas.filter(replicaUsable).length;
+      const row = document.createElement('div');
+      row.className = 'objrow';
+      const chips = obj.replicas.map(r=>{
+        const ok = replicaUsable(r);
+        return `<span class="chip ${ok?'healthy':'bad'}">${r.nodeId}</span>`;
+      }).join('');
+      row.innerHTML = `
+        <div>
+          <div class="objname">${obj.name}</div>
+          <div class="objmeta mono">checksum ${obj.checksum} · target N=${obj.n} · ${usable}/${obj.n} usable</div>
+          <div class="replica-chips">${chips}</div>
+        </div>
+        <span class="obj-status ${h}">${h==='ok'?'durable':h==='warn'?'degraded':'at risk'}</span>`;
+      list.appendChild(row);
+    });
+  }
+
+  function renderStats(){
+    document.getElementById('statNodes').textContent = healthyNodes().length + '/' + nodes.length;
+    document.getElementById('statObjects').textContent = objects.length;
+    const under = objects.filter(o=>objectHealth(o)!=='ok').length;
+    const underEl = document.getElementById('statUnder');
+    underEl.textContent = under;
+    underEl.className = under>0 ? 'stat-warn' : 'stat-good';
+    document.getElementById('statRepairs').textContent = repairCount;
+  }
+
+  function render(){ renderNodes(); renderObjects(); renderStats(); }
+
+  function buildSelects(){
+    const rf = document.getElementById('replFactor');
+    const qw = document.getElementById('quorumW');
+    rf.innerHTML=''; qw.innerHTML='';
+    for(let i=1;i<=5;i++){ const o=document.createElement('option'); o.value=i; o.textContent=i; rf.appendChild(o); }
+    for(let i=1;i<=5;i++){ const o=document.createElement('option'); o.value=i; o.textContent=i; qw.appendChild(o); }
+    rf.value = N; qw.value = W;
+    rf.addEventListener('change', ()=>{ N = parseInt(rf.value); if(W>N){W=N; qw.value=W;} log(`replication factor set to N=${N}`); });
+    qw.addEventListener('change', ()=>{ W = Math.min(parseInt(qw.value), N); qw.value=W; log(`write quorum set to W=${W}`); });
+  }
+
+  document.getElementById('putBtn').addEventListener('click', ()=>{
+    const input = document.getElementById('objName');
+    putObject(input.value.trim());
+    input.value = '';
+  });
+  document.getElementById('objName').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('putBtn').click(); });
+  document.getElementById('repairNowBtn').addEventListener('click', repairPass);
+  document.getElementById('scrubBtn').addEventListener('click', scrub);
+  document.getElementById('killRandomBtn').addEventListener('click', killRandom);
+  document.getElementById('healAllBtn').addEventListener('click', healAll);
+  document.getElementById('chaosToggle').addEventListener('change', e=>{
+    if(e.target.checked){
+      log('chaos monkey enabled — random node failures every ~5s', 'warn');
+      chaosInterval = setInterval(()=>{
+        const roll = Math.random();
+        if(roll < 0.5) killRandom();
+        else {
+          const alive = nodes.filter(n=>n.status==='healthy');
+          if(alive.length) setNodeStatus(alive[Math.floor(Math.random()*alive.length)].id, 'partitioned');
+        }
+      }, 5000);
+    } else {
+      clearInterval(chaosInterval);
+      log('chaos monkey disabled');
+    }
+  });
+
+  initNodes();
+  buildSelects();
+  ['manifests/root.idx','users/1042/profile.json','media/thumb-2291.png','ledger/2026-09-26.log','config/cluster.yaml']
+    .forEach(n=>putObject(n));
+  log('cluster bootstrapped with '+NODE_COUNT+' nodes across '+REGIONS.length+' regions', 'repair');
+  setInterval(repairPass, 8000);
+  render();
+})();
+</script>
+</body>
+</html>
